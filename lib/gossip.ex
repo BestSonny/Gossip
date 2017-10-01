@@ -73,12 +73,9 @@ defmodule GSP do
       end
     end
 
-    #initial nodes
     pids = for node_id <- 0..numNodes-1 do
       pid = GossipNode.new(%{node_id: node_id, rumor_count: 0, master_pid: self()})
     end
-    IO.inspect pids
-    IO.inspect map
     #add links
     for node_id <- 0..numNodes-1 do
       node = Enum.at(pids, node_id)
@@ -94,21 +91,21 @@ defmodule GSP do
       IO.puts "hello"
     end
 
-    wait_done()
+    wait_done(0,numNodes)
 
 
   end
 
-  def wait_done(done_count \\ 0) do
+  def wait_done(done_count \\ 0, numNodes) do
     receive do
       :done ->
       done_count = done_count + 1
       IO.puts done_count
-      if done_count == 10 do
+      if done_count == numNodes do
         IO.puts "finished"
-        Process.exit(self(), :kill)
+        Process.exit(self(), :normal)
       end
-    
+      wait_done(done_count, numNodes)
     end
   end
 
@@ -130,19 +127,19 @@ defmodule GossipNode do
   defp run(state) do
     receive do
       :hello ->
-      new_rumor_count = state.rumor_count + 1
-      new_state = Map.put(state, :rumor_count, new_rumor_count)
-      cond do
-        new_rumor_count < 10 ->
+      IO.puts "hello"
+      if state.rumor_count < 10 do
+          new_rumor_count = state.rumor_count + 1
+          new_state = Map.put(state, :rumor_count, new_rumor_count)
           random = Enum.random(0..length(new_state.neighbors)-1)
           select_neighbor = Enum.at(new_state.neighbors, random)
           send select_neighbor, :hello
-          run(new_state)
-        new_rumor_count == 10 ->
+          IO.puts "[#{inspect select_neighbor}] Node #{new_state.node_id} Count #{inspect new_rumor_count}"
+      end
+      if new_rumor_count == 10 do
           send new_state.master_pid, :done
       end
-
-
+      run(new_state)
 
       {:add_neighbors, neighbors} ->
       new_state = Map.put(state, :neighbors, neighbors)
