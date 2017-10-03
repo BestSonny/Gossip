@@ -192,7 +192,7 @@ defmodule GossipNode do
         if state.done_push == 0 do
           if :queue.len(history_queue) == 3 do
             {{:value, first_value}, history_queue} = :queue.out(history_queue)
-            third_value = :queue.head(history_queue)
+            third_value = :queue.daeh(history_queue)
             if abs(third_value-first_value) < 1.0e-10 do
               send state.master_pid, {self(), :done}
               state = Map.put(state, :done_push, 1)
