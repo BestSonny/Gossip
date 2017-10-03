@@ -4,6 +4,7 @@ defmodule GSP do
     {_, str, _} = args |> OptionParser.parse
     str
   end
+
   def valid_location(locate_x, locate_y, true_sqrt, max_nodes) do
     locate_y + locate_x * true_sqrt < max_nodes and locate_y>= 0 and locate_y< true_sqrt
     and locate_x>= 0 and locate_x< true_sqrt
@@ -74,14 +75,16 @@ defmodule GSP do
     end
 
     pids = for node_id <- 0..numNodes-1 do
-      pid = GossipNode.new(%{node_id: node_id, rumor_count: 0, master_pid: self()})
+      GossipNode.new(%{node_id: node_id, rumor_count: 0, master_pid: self()})
     end
+
+
     #add links
     for node_id <- 0..numNodes-1 do
       node = Enum.at(pids, node_id)
       neighbor_map = Enum.at(map, node_id)
       neighbors = for neighbor_id <- 0..length(neighbor_map)-1 do Enum.at(pids, Enum.at(neighbor_map, neighbor_id)) end
-      send(node, {:add_neighbors, neighbors})
+      send node, {:add_neighbors, neighbors}
     end
 
     case algorithm do
@@ -91,27 +94,27 @@ defmodule GSP do
       IO.puts "hello"
     end
 
-    wait_done(0,numNodes)
-
+    wait_done(%{done_count: 0, numNodes: numNodes})
 
   end
 
-  def wait_done(done_count \\ 0, numNodes) do
+  def wait_done(state) do
     receive do
-      :done ->
-      done_count = done_count + 1
-      IO.puts done_count
-      if done_count == numNodes do
-        IO.puts "finished"
-        Process.exit(self(), :normal)
-      end
-      wait_done(done_count, numNodes)
+      {pid, :done} ->
+        new_done_count = state.done_count + 1
+        IO.puts "#{new_done_count} #{inspect pid}"
+        new_state = Map.put(state, :done_count, new_done_count)
+        if new_done_count == state.numNodes do
+          Process.exit(self(),:normal)
+        end
+        wait_done(new_state)
     end
   end
 
 end
 
 defmodule GossipNode do
+
   @default_state %{
     node_id: -1,
     rumor_count: 0,
@@ -119,31 +122,43 @@ defmodule GossipNode do
   }
 
   def new(state \\ %{}) do
-    spawn_link fn ->
+    IO.inspect Map.merge(@default_state, state)
+    pid = spawn_link fn ->
       Map.merge(@default_state, state) |> run
     end
   end
 
   defp run(state) do
     receive do
+      :periodical ->
+        if state.rumor_count < 10 do
+          random = Enum.random(0..length(state.neighbors)-1)
+          select_neighbor = Enum.at(state.neighbors, random)
+          send select_neighbor, :hello
+          Process.send_after(self(), :periodical, 1000)
+        end
+        run(state)
+
       :hello ->
-      IO.puts "hello"
-      if state.rumor_count < 10 do
+        if state.rumor_count < 10 do
           new_rumor_count = state.rumor_count + 1
           new_state = Map.put(state, :rumor_count, new_rumor_count)
-          random = Enum.random(0..length(new_state.neighbors)-1)
-          select_neighbor = Enum.at(new_state.neighbors, random)
+          random = Enum.random(0..length(state.neighbors)-1)
+          select_neighbor = Enum.at(state.neighbors, random)
           send select_neighbor, :hello
-          IO.puts "[#{inspect select_neighbor}] Node #{new_state.node_id} Count #{inspect new_rumor_count}"
-      end
-      if new_rumor_count == 10 do
-          send new_state.master_pid, :done
-      end
-      run(new_state)
+          if state.rumor_count == 1 do
+            Process.send_after(self(), :periodical, 1000)
+          end
+          run(new_state)
+        end
+        if state.rumor_count == 10 do
+          send state.master_pid, {self(), :done}
+          run(state)
+        end
 
       {:add_neighbors, neighbors} ->
-      new_state = Map.put(state, :neighbors, neighbors)
-      run(new_state)
+        new_state = Map.put(state, :neighbors, neighbors)
+        run(new_state)
     end
   end
 
