@@ -88,7 +88,7 @@ defmodule GSP do
     end
 
 
-    timeStart = :erlang.system_time / 1.0e6 |> round
+    timeStart = :erlang.system_time #/ 1.0e6 |> Float.round 2 #
     case algorithm do
       "gossip" ->
       random = Enum.random(0..numNodes-1)
@@ -111,8 +111,8 @@ defmodule GSP do
         IO.puts "Percentage complete: #{new_done_count / state.numNodes}"
         new_state = Map.put(state, :done_count, new_done_count)
         if new_done_count / state.numNodes > 0.9 do
-          timeEnd = :erlang.system_time / 1.0e6 |> round
-          IO.puts "Time consumed: #{timeEnd - state.timeStart}"
+          timeEnd = :erlang.system_time #/ 1.0e6 |> Float.round 2
+          IO.puts "Time consumed: #{(timeEnd - state.timeStart) /1.0e3}"
           Process.exit(self(),:normal)
         end
         wait_done(new_state)
