@@ -75,7 +75,7 @@ defmodule GSP do
     end
 
     pids = for node_id <- 0..numNodes-1 do
-      GossipNode.new(%{node_id: node_id, rumor_count: 0, master_pid: self()})
+      GossipNode.new(%{node_id: node_id, sum: node_id, weight: 1, rumor_count: 0, master_pid: self(), history_queue: :queue.new, done_push: 0})
     end
 
 
@@ -87,14 +87,20 @@ defmodule GSP do
       send node, {:add_neighbors, neighbors}
     end
 
+
+    timeStart = :erlang.system_time / 1.0e6 |> round
     case algorithm do
       "gossip" ->
-      send Enum.at(pids, 0), :hello
-      "line" ->
-      IO.puts "hello"
+      random = Enum.random(0..numNodes-1)
+      send Enum.at(pids, random), :start_gossip
+      "push-sum" ->
+      random = Enum.random(0..numNodes-1)
+      send Enum.at(pids, random), :start_push_sum
     end
 
-    wait_done(%{done_count: 0, numNodes: numNodes})
+
+    wait_done(%{done_count: 0, numNodes: numNodes, timeStart: timeStart})
+
 
   end
 
@@ -102,9 +108,11 @@ defmodule GSP do
     receive do
       {pid, :done} ->
         new_done_count = state.done_count + 1
-        IO.puts "#{new_done_count} #{inspect pid}"
+        IO.puts "Percentage complete: #{new_done_count / state.numNodes}"
         new_state = Map.put(state, :done_count, new_done_count)
-        if new_done_count == state.numNodes do
+        if new_done_count / state.numNodes > 0.9 do
+          timeEnd = :erlang.system_time / 1.0e6 |> round
+          IO.puts "Time consumed: #{timeEnd - state.timeStart}"
           Process.exit(self(),:normal)
         end
         wait_done(new_state)
@@ -131,34 +139,86 @@ defmodule GossipNode do
   defp run(state) do
     receive do
       :periodical ->
-        if state.rumor_count < 10 do
-          random = Enum.random(0..length(state.neighbors)-1)
-          select_neighbor = Enum.at(state.neighbors, random)
-          send select_neighbor, :hello
-          Process.send_after(self(), :periodical, 1000)
-        end
+        random = Enum.random(0..length(state.neighbors)-1)
+        select_neighbor = Enum.at(state.neighbors, random)
+        send select_neighbor, :gossip
+        Process.send_after(self(), :periodical, 100)
         run(state)
 
-      :hello ->
-        if state.rumor_count < 10 do
-          new_rumor_count = state.rumor_count + 1
-          new_state = Map.put(state, :rumor_count, new_rumor_count)
+      :start_gossip ->
+        random = Enum.random(0..length(state.neighbors)-1)
+        select_neighbor = Enum.at(state.neighbors, random)
+        send select_neighbor, :gossip
+        send self(), :periodical
+        run(state)
+
+      :gossip ->
+        new_rumor_count = state.rumor_count + 1
+        new_state = Map.put(state, :rumor_count, new_rumor_count)
+
+        if new_state.rumor_count == 10 do
+          send new_state.master_pid, {self(), :done}
+          Process.exit(self(),:normal)
+        end
+
+        random = Enum.random(0..length(new_state.neighbors)-1)
+        select_neighbor = Enum.at(new_state.neighbors, random)
+        send select_neighbor, :gossip
+        send self(), :periodical
+
+        run(new_state)
+
+      :start_push_sum ->
+        new_sum = state.sum / 2.0
+        new_weight = state.weight / 2.0
+        history_ratio = new_sum/new_weight
+
+        history_queue = :queue.in(history_ratio, state.history_queue)
+        new_state = Map.put(state, :sum, new_sum)
+        new_state = Map.put(new_state, :weight, new_weight)
+        new_state = Map.put(new_state, :history_queue, history_queue)
+
+        random = Enum.random(0..length(state.neighbors)-1)
+        select_neighbor = Enum.at(new_state.neighbors, random)
+        send select_neighbor, {:push_sum, new_sum, new_weight}
+
+        run(new_state)
+
+      {:push_sum, sum, weight} ->
+        new_sum = state.sum + sum
+        new_weight = state.weight + weight
+        new_history_ratio = new_sum / new_weight
+        history_queue = :queue.in(new_history_ratio, state.history_queue)
+        if state.done_push == 0 do
+          if :queue.len(history_queue) == 3 do
+            {{:value, first_value}, history_queue} = :queue.out(history_queue)
+            third_value = :queue.head(history_queue)
+            if abs(third_value-first_value) < 1.0e-10 do
+              send state.master_pid, {self(), :done}
+              state = Map.put(state, :done_push, 1)
+            end
+          end
+
+          new_state = Map.put(state, :sum, new_sum / 2.0)
+          new_state = Map.put(new_state, :weight, new_weight / 2.0)
+          new_state = Map.put(new_state, :history_queue, history_queue)
+
+          random = Enum.random(0..length(state.neighbors)-1)
+          select_neighbor = Enum.at(new_state.neighbors, random)
+          send select_neighbor, {:push_sum, new_sum / 2.0, new_weight / 2.0}
+          run(new_state)
+        else
           random = Enum.random(0..length(state.neighbors)-1)
           select_neighbor = Enum.at(state.neighbors, random)
-          send select_neighbor, :hello
-          if state.rumor_count == 1 do
-            Process.send_after(self(), :periodical, 1000)
-          end
-          run(new_state)
-        end
-        if state.rumor_count == 10 do
-          send state.master_pid, {self(), :done}
+          send select_neighbor, {:push_sum, sum, weight}
           run(state)
         end
 
       {:add_neighbors, neighbors} ->
         new_state = Map.put(state, :neighbors, neighbors)
         run(new_state)
+
+
     end
   end
 
