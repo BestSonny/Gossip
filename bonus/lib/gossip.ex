@@ -186,7 +186,7 @@ defmodule GossipNode do
       :start_push_sum ->
         new_sum = state.sum / 2.0
         new_weight = state.weight / 2.0
-        history_ratio = new_sum / new_weight
+        history_ratio = new_sum / (new_weight + 1e-50)
 
         history_queue = :queue.in(history_ratio, state.history_queue)
         new_state = Map.put(state, :sum, new_sum)

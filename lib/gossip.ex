@@ -171,7 +171,7 @@ defmodule GossipNode do
       {:periodical_push, sum, weight} ->
         new_sum = state.sum + sum
         new_weight = state.weight + weight
-        history_ratio = new_sum / new_weight
+        history_ratio = new_sum / (new_weight + 1.0e-50)
         new_state = Map.put(state, :sum, new_sum / 2)
         new_state = Map.put(new_state, :weight, new_weight / 2)
 
