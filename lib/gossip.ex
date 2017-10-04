@@ -110,7 +110,7 @@ defmodule GSP do
         new_done_count = state.done_count + 1
         IO.puts "Percentage complete: #{new_done_count / state.numNodes}"
         new_state = Map.put(state, :done_count, new_done_count)
-        if new_done_count / state.numNodes > 0.9 do
+        if new_done_count == state.numNodes do
           timeEnd = :erlang.system_time #/ 1.0e6 |> Float.round 2
           IO.puts "Time consumed: #{(timeEnd - state.timeStart) /1.0e3}"
           Process.exit(self(),:normal)
@@ -158,7 +158,7 @@ defmodule GossipNode do
 
         if new_state.rumor_count == 10 do
           send new_state.master_pid, {self(), :done}
-          Process.exit(self(),:normal)
+          Process.exit(self(), :normal)
         end
 
         random = Enum.random(0..length(new_state.neighbors)-1)
@@ -168,10 +168,25 @@ defmodule GossipNode do
 
         run(new_state)
 
+      {:periodical_push, sum, weight} ->
+        new_sum = state.sum + sum
+        new_weight = state.weight + weight
+        history_ratio = new_sum / new_weight
+        new_state = Map.put(state, :sum, new_sum / 2)
+        new_state = Map.put(new_state, :weight, new_weight / 2)
+
+
+        random = Enum.random(0..length(state.neighbors)-1)
+        select_neighbor = Enum.at(state.neighbors, random)
+        send select_neighbor, {:push_sum, new_sum / 2, new_weight / 2}
+        Process.send_after(self(), {:periodical_push, new_sum / 2, new_weight / 2}, 1000)
+
+        run(new_state)
+
       :start_push_sum ->
         new_sum = state.sum / 2.0
         new_weight = state.weight / 2.0
-        history_ratio = new_sum/new_weight
+        history_ratio = new_sum / new_weight
 
         history_queue = :queue.in(history_ratio, state.history_queue)
         new_state = Map.put(state, :sum, new_sum)
@@ -189,30 +204,31 @@ defmodule GossipNode do
         new_weight = state.weight + weight
         new_history_ratio = new_sum / new_weight
         history_queue = :queue.in(new_history_ratio, state.history_queue)
-        if state.done_push == 0 do
-          if :queue.len(history_queue) == 3 do
-            {{:value, first_value}, history_queue} = :queue.out(history_queue)
-            third_value = :queue.daeh(history_queue)
-            if abs(third_value-first_value) < 1.0e-10 do
-              send state.master_pid, {self(), :done}
-              state = Map.put(state, :done_push, 1)
-            end
+
+        if :queue.len(history_queue) == 3 do
+          {{:value, first_value}, history_queue} = :queue.out(history_queue)
+          third_value = :queue.daeh(history_queue)
+          if abs(third_value-first_value) < 1.0e-10 do
+              if state.done_push == 0 do
+                IO.puts first_value
+                send state.master_pid, {self(), :done}
+                state = Map.put(state, :done_push, 1)
+                Process.exit(self(), :normal)
+              end
           end
-
-          new_state = Map.put(state, :sum, new_sum / 2.0)
-          new_state = Map.put(new_state, :weight, new_weight / 2.0)
-          new_state = Map.put(new_state, :history_queue, history_queue)
-
-          random = Enum.random(0..length(state.neighbors)-1)
-          select_neighbor = Enum.at(new_state.neighbors, random)
-          send select_neighbor, {:push_sum, new_sum / 2.0, new_weight / 2.0}
-          run(new_state)
-        else
-          random = Enum.random(0..length(state.neighbors)-1)
-          select_neighbor = Enum.at(state.neighbors, random)
-          send select_neighbor, {:push_sum, sum, weight}
-          run(state)
         end
+
+        new_state = Map.put(state, :sum, new_sum / 2.0)
+        new_state = Map.put(new_state, :weight, new_weight / 2.0)
+        new_state = Map.put(new_state, :history_queue, history_queue)
+
+        random = Enum.random(0..length(state.neighbors)-1)
+        select_neighbor = Enum.at(new_state.neighbors, random)
+        send select_neighbor, {:push_sum, new_sum / 2.0, new_weight / 2.0}
+        send self(), {:periodical_push, 0, 0}
+
+        run(new_state)
+
 
       {:add_neighbors, neighbors} ->
         new_state = Map.put(state, :neighbors, neighbors)
