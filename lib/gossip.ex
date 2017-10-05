@@ -41,11 +41,11 @@ defmodule GSP do
     receive do
       {pid, :done} ->
         new_done_count = state.done_count + 1
-        IO.puts "Percentage complete: #{new_done_count / state.numNodes}"
+        IO.puts "Percentage complete: #{new_done_count / (state.numNodes - state.errNodes)}"
+        timeEnd = :erlang.system_time #/ 1.0e6 |> Float.round 2
+        IO.puts "Time consumed: #{(timeEnd - state.timeStart) /1.0e3}"
         new_state = Map.put(state, :done_count, new_done_count)
-        if new_done_count / state.numNodes > 0.95 do
-          timeEnd = :erlang.system_time #/ 1.0e6 |> Float.round 2
-          IO.puts "Time consumed: #{(timeEnd - state.timeStart) /1.0e3}"
+        if new_done_count / state.numNodes > 0.9 do
           Process.exit(self(),:normal)
         end
         wait_done(new_state)
@@ -86,6 +86,7 @@ defmodule GossipNode do
         map = []
         locate_x = :math.floor(node_id / sqrt)
         locate_y = node_id - locate_x * sqrt
+
         #left node
         if valid_location(locate_x, locate_y-1, sqrt, numNodes) do map = map ++ [round(locate_y-1 + locate_x * sqrt)] end
         #right node
@@ -96,11 +97,13 @@ defmodule GossipNode do
         if valid_location(locate_x+1, locate_y, sqrt, numNodes) do map = map ++ [round(locate_y + (locate_x+1) * sqrt)] end
       "full" ->
         map = for y <- 0..numNodes-1, y != node_id do y  end
+
       "imp2D" ->
         sqrt = :math.ceil(:math.sqrt(numNodes))
         map = []
         locate_x = :math.floor(node_id / sqrt)
-        locate_y = node - locate_x * sqrt
+        locate_y = node_id - locate_x * sqrt
+
         #left node
         if valid_location(locate_x, locate_y-1, sqrt, numNodes) do map = map ++ [round(locate_y-1 + locate_x * sqrt)] end
         #right node
@@ -125,7 +128,7 @@ defmodule GossipNode do
         random = Enum.random(0..length(state.neighbors)-1)
         select_neighbor = Enum.at(state.neighbors, random)
         send select_neighbor, :gossip
-        Process.send_after(self(), :periodical, 1)
+        Process.send_after(self(), :periodical, 5)
         run(state)
 
       :start_gossip ->
