@@ -53,10 +53,10 @@ defmodule GSP do
         new_done_count = state.done_count + 1
         IO.puts "Percentage complete: #{new_done_count / (state.numNodes - state.errNodes)}"
         timeEnd = :os.system_time(:millisecond)
-        IO.puts "Time consumed: #{(timeEnd - state.timeStart) /1000}"
+        IO.puts "Time consumed: #{(timeEnd - state.timeStart)}"
         new_state = Map.put(state, :done_count, new_done_count)
         send self(), :monitor
-        if new_done_count / (state.numNodes - state.errNodes) > 0.9  do
+        if new_done_count / (state.numNodes - state.errNodes) > 0.85  do
           Process.exit(self(),:normal)
         end
         wait_done(new_state)
@@ -150,6 +150,11 @@ defmodule GossipNode do
       :periodical ->
         random = Enum.random(0..length(state.neighbors)-1)
         select_neighbor = Enum.at(state.neighbors, random)
+        if Process.alive?(select_neighbor) == false do
+          neighbors = List.delete(state.neighbors, select_neighbor)
+          new_state = Map.put(state, :neighbors, neighbors)
+          run(new_state)
+        end  
         send select_neighbor, :gossip
         Process.send_after(self(), :periodical, 10)
         run(state)

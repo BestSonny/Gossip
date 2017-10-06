@@ -43,7 +43,7 @@ defmodule GSP do
         new_done_count = state.done_count + 1
         IO.puts "Percentage complete: #{new_done_count / state.numNodes}"
         timeEnd = :os.system_time(:millisecond)
-        IO.puts "Time consumed: #{(timeEnd - state.timeStart) / 1000}"
+        IO.puts "Time consumed: #{(timeEnd - state.timeStart)}" #in milisecond
         new_state = Map.put(state, :done_count, new_done_count)
         if new_done_count / state.numNodes > 0.9 do
           Process.exit(self(),:normal)
