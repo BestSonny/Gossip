@@ -41,7 +41,7 @@ defmodule GSP do
     receive do
       {pid, :done} ->
         new_done_count = state.done_count + 1
-        IO.puts "Percentage complete: #{new_done_count / (state.numNodes - state.errNodes)}"
+        IO.puts "Percentage complete: #{new_done_count / state.numNodes}"
         timeEnd = :erlang.system_time #/ 1.0e6 |> Float.round 2
         IO.puts "Time consumed: #{(timeEnd - state.timeStart) /1.0e3}"
         new_state = Map.put(state, :done_count, new_done_count)
